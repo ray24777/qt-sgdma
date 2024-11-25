@@ -1,0 +1,65 @@
+# Byte-compiled files
+__pycache__/
+*.py[cod]
+
+# Virtual environment
+venv/
+.env/
+
+# Editor and IDE files
+.idea/
+*.swp
+*.swo
+*.bak
+*.tmp
+.DS_Store
+
+# Qt related build files
+build/
+dist/
+*.qrc.py
+*.pyc
+*.pyo
+*.log
+
+# Qt Designer generated files
+*.ui
+*.qrc
+
+# Operating System files
+Thumbs.db
+.DS_Store
+
+# Python packaging
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+*.whl
+pip-wheel-metadata/
+
+# Logs and other generated files
+*.log
+*.cache
+
+# Test and coverage files
+.pytest_cache/
+.tox/
+.nox/
+coverage.xml
+htmlcov/
+*.cover
+*.coverage
+*.cov
+
+# Miscellaneous
+.vscode/
+*.sqlite3
+*.db
+*.tmp
+*.bak
+
+# database
+input/
+output/
