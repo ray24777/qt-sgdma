@@ -2,8 +2,20 @@ import sys
 import os
 from PyQt5.QtWidgets import (QApplication, QWidget, QLabel, QVBoxLayout, QPushButton, QFileDialog,
                              QHBoxLayout, QTextEdit, QSizePolicy)
-from PyQt5.QtGui import QPixmap, QTextCursor
+from PyQt5.QtGui import QPixmap, QTextCursor, QImage
 from PyQt5.QtCore import Qt
+
+import cv2
+import os
+import glob
+import tempfile
+import numpy as np
+import shutil
+from agentclpr import CLPSystem
+
+from detect import detect
+
+from pers import perspective_transform
 
 # 自定义类，用于将标准输出重定向到 QTextEdit
 class EmittingStream(object):
@@ -23,21 +35,42 @@ class ImageViewer(QWidget):
     def __init__(self):
         super().__init__()
         self.initUI()
-        self.image_files = []
         self.current_image_index = 0
-
+        self.quad_pts = []
+        self.detected_text = ''
+        self.score=0
+        self.rect_width = 440
+        self.rect_height = 140
+        self.folder_path = 'input'
+        self.cache_path = 'cache'
+        self.image_files = [os.path.join(self.folder_path, f) for f in os.listdir(self.folder_path)
+                                if f.lower().endswith('.jpg')]
+        if self.image_files:
+            self.current_image_index = 0
+            self.show_image()
+            
     def initUI(self):
         self.setWindowTitle('DMA’s Frontend')
 
-        # 创建布局
-        self.layout = QVBoxLayout()
+        # 创建主布局为水平布局
+        self.main_layout = QHBoxLayout()
+        self.setLayout(self.main_layout)
+
+        # 左侧布局（原有组件）
+        self.left_layout = QVBoxLayout()
+        self.main_layout.addLayout(self.left_layout)
+
+        # 右侧布局（空按钮）
+        self.right_layout = QVBoxLayout()
+        self.main_layout.addLayout(self.right_layout)
 
         # 显示图像的标签
-        self.image_label = QLabel('没有图像')
+        self.image_label = QLabel('DMA 2024')
         self.image_label.setAlignment(Qt.AlignCenter)
-        self.layout.addWidget(self.image_label)
+        self.image_label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self.left_layout.addWidget(self.image_label)
 
-        # 上一张、下一张按钮
+        # 上一张、下一张按钮布局
         self.button_layout = QHBoxLayout()
 
         self.prev_button = QPushButton('上一张')
@@ -48,12 +81,12 @@ class ImageViewer(QWidget):
         self.next_button.clicked.connect(self.show_next_image)
         self.button_layout.addWidget(self.next_button)
 
-        self.layout.addLayout(self.button_layout)
+        self.left_layout.addLayout(self.button_layout)
 
         # 打开文件夹按钮
         self.open_button = QPushButton('打开文件夹')
         self.open_button.clicked.connect(self.open_folder)
-        self.layout.addWidget(self.open_button)
+        self.left_layout.addWidget(self.open_button)
 
         # 日志窗口
         self.log_text = QTextEdit()
@@ -66,20 +99,50 @@ class ImageViewer(QWidget):
         number_of_lines = 5
         self.log_text.setFixedHeight(line_height * number_of_lines + 10)  # +10用于一些内边距
 
-        self.layout.addWidget(self.log_text)
-
+        self.left_layout.addWidget(self.log_text)
 
         # 将标准输出重定向到日志窗口
         sys.stdout = EmittingStream(self.log_text)
 
-        self.setLayout(self.layout)
+        # 在右侧添加一列按钮
+        text_on_right = ['识别车牌',                '透视变换',         '二值化',           '字符切分',         'PCIe发送']
+        defs_on_right = [self.detect_plate, self.perspective_transform, self.show_next_image, self.show_next_image, self.show_next_image]
+        #defs_on_right = [self.detect_plate, self.perspective_transform, self.binarize, self.character_segmentation, self.pcie_send]
+        for i in range(len(text_on_right)):
+            button = QPushButton(text_on_right[i])
+            button.clicked.connect(defs_on_right[i])
+            self.right_layout.addWidget(button)
+
+        # 添加一个伸展，以将按钮靠上排列
+        self.right_layout.addStretch()
+
+
+    def detect_plate(self):
+        print('识别车牌')
+        # 调用 detect 函数
+        self.quad_pts, self.detected_text, self.score, image_with_plate = detect(self.image_files[self.current_image_index])
+        # 显示image_with_plate
+        cv2.imwrite(os.path.join(self.cache_path, str('origin.jpg')), image_with_plate)
+        pixmap = QPixmap(os.path.join(self.cache_path, str('origin.jpg')))
+        self.image_label.setPixmap(pixmap.scaled(self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+    def perspective_transform(self):
+        print('透视变换')
+        # 调用 perspective_transform 函数
+        warped_image=perspective_transform(self.image_files[self.current_image_index],
+                              self.quad_pts,
+                              self.rect_width,
+                              self.rect_height)
+        cv2.imwrite(os.path.join(self.cache_path, str('plate.jpg')), warped_image)
+        pixmap = QPixmap(os.path.join(self.cache_path, str('plate.jpg')))
+        self.image_label.setPixmap(pixmap.scaled(self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
 
     def open_folder(self):
-        folder_path = QFileDialog.getExistingDirectory(self, '选择文件夹')
-        if folder_path:
-            print(f"选择的文件夹: {folder_path}")
+        self.folder_path = QFileDialog.getExistingDirectory(self, '选择文件夹')
+        if self.folder_path:
+            print(f"选择的文件夹: {self.folder_path}")
             # 获取文件夹中的所有 JPG 文件
-            self.image_files = [os.path.join(folder_path, f) for f in os.listdir(folder_path)
+            self.image_files = [os.path.join(self.folder_path, f) for f in os.listdir(self.folder_path)
                                 if f.lower().endswith('.jpg')]
             if self.image_files:
                 self.current_image_index = 0
@@ -93,8 +156,14 @@ class ImageViewer(QWidget):
         image_path = self.image_files[self.current_image_index]
         pixmap = QPixmap(image_path)
         # 调整图像大小以适应标签
-        self.image_label.setPixmap(pixmap.scaled(self.image_label.size(), Qt.KeepAspectRatio))
+        self.image_label.setPixmap(pixmap.scaled(self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
         print(f"显示图像: {image_path}")
+
+    def resizeEvent(self, event):
+        # 当窗口大小变化时，更新图像显示
+        if self.image_files:
+            self.show_image()
+        super().resizeEvent(event)
 
     def show_next_image(self):
         if self.image_files:
@@ -106,9 +175,11 @@ class ImageViewer(QWidget):
             self.current_image_index = (self.current_image_index - 1) % len(self.image_files)
             self.show_image()
 
+
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
     viewer = ImageViewer()
-    viewer.resize(800, 600)
+    viewer.resize(1080, 724)
     viewer.show()
     sys.exit(app.exec_())

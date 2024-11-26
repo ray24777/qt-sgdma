@@ -63,3 +63,5 @@ htmlcov/
 # database
 input/
 output/
+plate-output/
+cache/
