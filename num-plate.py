@@ -3,11 +3,9 @@ import os
 import glob
 import tempfile
 import numpy as np
-from skimage.measure import shannon_entropy
-from PIL import ImageFont, ImageDraw, Image
-from matplotlib import pyplot as plt
 import shutil
 from agentclpr import CLPSystem
+
 classifier = CLPSystem()
 
 input_dir = 'input'
@@ -118,7 +116,7 @@ for files in image_paths:
         digit = warped_image[lower_margin:rect_height - upper_margin, 
                              first_digit_x + i * digit_width: first_digit_x + (i + 1) * digit_width]
         cv2.imwrite(os.path.join(current_output_dir, str('plate_') + str(i+1) + '.jpg'), digit)
-        # 保存为hex，有问题
+
         # resize to 24x50
         height, width = 50, 24
         digit = cv2.resize(digit, (width, height), interpolation=cv2.INTER_NEAREST)

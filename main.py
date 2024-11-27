@@ -17,6 +17,9 @@ from detect import detect
 
 from pers import perspective_transform
 
+from binarize import binarize_seg
+
+
 # 自定义类，用于将标准输出重定向到 QTextEdit
 class EmittingStream(object):
     def __init__(self, text_edit):
@@ -49,6 +52,10 @@ class ImageViewer(QWidget):
             self.current_image_index = 0
             self.show_image()
             
+        #clean cache and create new cache
+        shutil.rmtree(self.cache_path, ignore_errors=True)
+        os.makedirs(self.cache_path)
+
     def initUI(self):
         self.setWindowTitle('DMA’s Frontend')
 
@@ -105,8 +112,8 @@ class ImageViewer(QWidget):
         sys.stdout = EmittingStream(self.log_text)
 
         # 在右侧添加一列按钮
-        text_on_right = ['识别车牌',                '透视变换',         '二值化',           '字符切分',         'PCIe发送']
-        defs_on_right = [self.detect_plate, self.perspective_transform, self.show_next_image, self.show_next_image, self.show_next_image]
+        text_on_right = ['识别车牌',                '透视变换',         '二值化与切分',           'PCIe发送',         '一键执行全部']
+        defs_on_right = [self.detect_plate, self.perspective_transform, self.binarize_segmentation, self.pcie, self.one_click]
         #defs_on_right = [self.detect_plate, self.perspective_transform, self.binarize, self.character_segmentation, self.pcie_send]
         for i in range(len(text_on_right)):
             button = QPushButton(text_on_right[i])
@@ -136,6 +143,43 @@ class ImageViewer(QWidget):
         cv2.imwrite(os.path.join(self.cache_path, str('plate.jpg')), warped_image)
         pixmap = QPixmap(os.path.join(self.cache_path, str('plate.jpg')))
         self.image_label.setPixmap(pixmap.scaled(self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
+    def binarize_segmentation(self):
+        print('二值化与切分')
+        # 调用 binarize_seg 函数
+        binarize_seg(self.rect_width, 
+                     self.rect_height, 
+                     self.detected_text,
+                     self.cache_path)
+        
+        # 显示切分后的字符-拼接5张图
+        image = np.zeros((200, 1200, 3), dtype=np.uint8)
+        for i in range(5):
+            digit = cv2.imread(os.path.join(self.cache_path, str('plate_') + str(i+1) + '.jpg'))
+            digit_resized = cv2.resize(digit, (240, 200))
+            image[:, i*240:(i+1)*240] = digit_resized
+        cv2.imwrite(os.path.join(self.cache_path, str('all-digits.jpg')), image)
+        pixmap = QPixmap(os.path.join(self.cache_path, str('all-digits.jpg')))
+        self.image_label.setPixmap(pixmap.scaled(self.image_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
+        
+
+    def pcie(self):
+        print('PCIe发送')
+        # 调用 PCIe 发送函数
+        # 读取5张字符图
+        for i in range(5):
+            with open(os.path.join(self.cache_path, str(i+1) + '.hex'), 'r') as hex_file:
+                hex_values = hex_file.read()
+                print(f"{hex_values}\n")
+        while len(self.detected_text) > 5:
+            self.detected_text = self.detected_text[1:]
+        print('识别到的车牌号码为：', self.detected_text)
+
+    def one_click(self):
+        self.detect_plate()
+        self.perspective_transform()
+        self.binarize_segmentation()
+        self.pcie()
 
     def open_folder(self):
         self.folder_path = QFileDialog.getExistingDirectory(self, '选择文件夹')
